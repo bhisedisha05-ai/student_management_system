@@ -12,6 +12,8 @@ from . import models, crud, schemas
 # ── Paths ──
 BASE_DIR = Path(__file__).resolve().parent
 
+
+
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
 
