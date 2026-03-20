@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Subjects — EduTrack{% endblock %}
+{% block page_title %}Subjects{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <div class="section-title">Subjects</div>
+        <div class="section-sub">Manage all academic subjects</div>
+    </div>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addSubjectModal">
+        <i class="bi bi-plus-lg me-1"></i> Add Subject
+    </button>
+</div>
+
+<div class="row g-3" id="subjectsGrid">
+    <div class="col-12" style="color:var(--text-3);text-align:center;padding:32px">Loading…</div>
+</div>
+
+<!-- Add Subject Modal -->
+<div class="modal fade" id="addSubjectModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered" style="max-width:400px">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-journal-plus me-2" style="color:var(--accent)"></i>Add Subject</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" style="padding:24px">
+                <label class="form-label">Subject Name</label>
+                <input type="text" class="form-control" id="subjectName" placeholder="e.g. Physics">
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button class="btn btn-primary" onclick="addSubject()">
+                    <i class="bi bi-check-lg me-1"></i> Add Subject
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const subjectIcons = ['bi-calculator','bi-tornado','bi-translate','bi-book-half','bi-globe-asia-australia','bi-atom','bi-cpu','bi-palette','bi-music-note-beamed','bi-graph-up'];
+const subjectColors = ['blue','purple','green','orange','blue','purple','green','orange','blue','purple'];
+
+async function loadSubjects() {
+    try {
+        const subjects = await api('/api/subjects');
+        renderSubjects(subjects);
+    } catch(e) {
+        showToast('Failed to load subjects', 'error');
+    }
+}
+
+function renderSubjects(subjects) {
+    const grid = document.getElementById('subjectsGrid');
+    if (!subjects.length) {
+        grid.innerHTML = `<div class="col-12"><div class="empty-state"><i class="bi bi-journal-x"></i><h6>No subjects yet</h6><p style="font-size:12px">Add your first subject above</p></div></div>`;
+        return;
+    }
+    grid.innerHTML = subjects.map((s, i) => {
+        const icon = subjectIcons[i % subjectIcons.length];
+        const color = subjectColors[i % subjectColors.length];
+        return `
+        <div class="col-6 col-md-4 col-lg-3">
+            <div class="card" style="padding:20px;text-align:center;transition:transform .2s;cursor:default"
+                 onmouseover="this.style.transform='translateY(-3px)'" onmouseout="this.style.transform=''">
+                <div class="stat-icon ${color} mx-auto mb-3" style="width:48px;height:48px;font-size:22px">
+                    <i class="bi ${icon}"></i>
+                </div>
+                <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;color:var(--text)">${s.subject_name}</div>
+                <div style="font-size:11px;color:var(--text-3);margin-top:4px">Subject ID: ${s.id}</div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+async function addSubject() {
+    const name = document.getElementById('subjectName').value.trim();
+    if (!name) { showToast('Please enter a subject name', 'error'); return; }
+    try {
+        await api('/api/subjects', { method: 'POST', body: { subject_name: name } });
+        bootstrap.Modal.getInstance(document.getElementById('addSubjectModal')).hide();
+        document.getElementById('subjectName').value = '';
+        showToast('Subject added!');
+        loadSubjects();
+    } catch(e) {
+        showToast(e.message || 'Error adding subject', 'error');
+    }
+}
+
+loadSubjects();
+</script>
+{% endblock %}

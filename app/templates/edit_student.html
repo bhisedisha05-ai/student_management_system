@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Edit Student — EduTrack{% endblock %}
+{% block page_title %}Edit Student{% endblock %}
+
+{% block content %}
+
+<div style="max-width:600px">
+    <div class="page-header">
+        <div>
+            <div class="section-title">Edit Student</div>
+            <div class="section-sub">Update {{ student.name }}'s information</div>
+        </div>
+        <a href="/students" class="btn btn-secondary"><i class="bi bi-arrow-left me-1"></i> Back</a>
+    </div>
+
+    <div class="card">
+        <div class="card-body" style="padding:28px">
+            <div class="row g-3">
+                <div class="col-12">
+                    <label class="form-label">Full Name</label>
+                    <input type="text" class="form-control" id="name" value="{{ student.name }}" required>
+                </div>
+                <div class="col-6">
+                    <label class="form-label">Roll Number</label>
+                    <input type="number" class="form-control" id="rollNumber" value="{{ student.roll_number }}" min="1" required>
+                </div>
+                <div class="col-6">
+                    <label class="form-label">Date of Birth</label>
+                    <input type="date" class="form-control" id="dob" value="{{ student.dob }}" required>
+                </div>
+                <div class="col-6">
+                    <label class="form-label">Standard</label>
+                    <select class="form-select" id="standard" required>
+                        {% for i in range(1, 11) %}
+                        <option value="{{ i }}" {% if student.standard == i %}selected{% endif %}>Standard {{ i }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-6">
+                    <label class="form-label">Division</label>
+                    <select class="form-select" id="division" required>
+                        {% for d in ['A','B','C','D'] %}
+                        <option value="{{ d }}" {% if student.division == d %}selected{% endif %}>Division {{ d }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-12 mt-2">
+                    <hr class="divider">
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-primary" id="submitBtn" onclick="updateStudent()">
+                            <i class="bi bi-check-circle-fill me-1"></i> Save Changes
+                        </button>
+                        <a href="/students" class="btn btn-secondary">Cancel</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function updateStudent() {
+    const name = document.getElementById('name').value.trim();
+    const rollNumber = document.getElementById('rollNumber').value;
+    const dob = document.getElementById('dob').value;
+    const standard = document.getElementById('standard').value;
+    const division = document.getElementById('division').value;
+
+    if (!name || !rollNumber || !dob || !standard || !division) {
+        showToast('Please fill in all fields', 'error');
+        return;
+    }
+
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Saving…';
+
+    try {
+        await api('/api/students/{{ student.id }}', {
+            method: 'PUT',
+            body: { name, roll_number: parseInt(rollNumber), dob, standard: parseInt(standard), division }
+        });
+        showToast('Student updated successfully!');
+        setTimeout(() => window.location.href = '/students', 1200);
+    } catch(e) {
+        showToast(e.message || 'Error updating student', 'error');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i> Save Changes';
+    }
+}
+</script>
+{% endblock %}

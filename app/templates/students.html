@@ -1,0 +1,265 @@
+{% extends "base.html" %}
+{% block title %}Students — EduTrack{% endblock %}
+{% block page_title %}Students{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <div class="section-title">All Students</div>
+        <div class="section-sub">Manage and view student records</div>
+    </div>
+    <a href="/add_student" class="btn btn-primary"><i class="bi bi-person-plus-fill me-1"></i> Add Student</a>
+</div>
+
+<!-- Toolbar -->
+<div class="card mb-3">
+    <div class="card-body" style="padding:14px 20px">
+        <div class="d-flex flex-wrap align-items-center gap-3">
+            <div class="search-bar" style="flex:1;min-width:180px;max-width:300px">
+                <i class="bi bi-search"></i>
+                <input type="text" id="searchInput" placeholder="Search by name or roll…">
+            </div>
+            <div class="filter-pills" id="stdFilter">
+                <span class="filter-pill active" data-std="all">All Standards</span>
+            </div>
+            <div class="filter-pills" id="divFilter">
+                <span class="filter-pill active" data-div="all">All Divisions</span>
+            </div>
+            <div class="ms-auto d-flex gap-2">
+                <button class="btn btn-secondary btn-sm" id="toggleView" title="Toggle view"><i class="bi bi-grid-3x3-gap-fill"></i></button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Table view -->
+<div id="tableView">
+    <div class="card">
+        <div class="card-body p-0">
+            <table class="table mb-0">
+                <thead>
+                    <tr>
+                        <th>Student</th>
+                        <th>Roll No.</th>
+                        <th>Standard</th>
+                        <th>Division</th>
+                        <th>Date of Birth</th>
+                        <th>Avg. Marks</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="studentsBody">
+                    <tr><td colspan="7" class="text-center" style="color:var(--text-3);padding:32px">Loading…</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Grid / batch view -->
+<div id="gridView" style="display:none">
+    <div id="batchGrid"></div>
+</div>
+
+<!-- Delete confirm modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered" style="max-width:400px">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Delete Student</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" style="padding:20px">
+                <p style="color:var(--text-2)">Are you sure you want to delete <strong id="deleteStudentName"></strong>? This will also remove all their marks.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button class="btn btn-danger" id="confirmDeleteBtn">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let students = [], marksData = {}, currentStd = 'all', currentDiv = 'all', viewMode = 'table';
+let deleteModal, deleteStudentId;
+
+async function loadStudents() {
+    try {
+        students = await api('/api/students?limit=300');
+        buildFilters();
+        await loadAllMarks();
+        renderStudents();
+    } catch(e) {
+        showToast('Failed to load students', 'error');
+    }
+}
+
+async function loadAllMarks() {
+    const promises = students.map(s =>
+        api(`/api/marks/${s.id}`).then(m => { marksData[s.id] = m; }).catch(() => {})
+    );
+    await Promise.allSettled(promises);
+}
+
+function getStudentAvg(id) {
+    const m = marksData[id] || [];
+    if (!m.length) return null;
+    return Math.round(m.reduce((s,x) => s + x.marks, 0) / m.length);
+}
+
+function buildFilters() {
+    const stds = [...new Set(students.map(s => s.standard))].sort((a,b)=>a-b);
+    const divs = [...new Set(students.map(s => s.division))].sort();
+    const stdEl = document.getElementById('stdFilter');
+    stds.forEach(std => {
+        const s = document.createElement('span');
+        s.className = 'filter-pill'; s.dataset.std = std; s.textContent = `Std ${std}`;
+        s.onclick = () => setFilter('std', std, s);
+        stdEl.appendChild(s);
+    });
+    const divEl = document.getElementById('divFilter');
+    divs.forEach(div => {
+        const d = document.createElement('span');
+        d.className = 'filter-pill'; d.dataset.div = div; d.textContent = `Div ${div}`;
+        d.onclick = () => setFilter('div', div, d);
+        divEl.appendChild(d);
+    });
+    document.querySelectorAll('#stdFilter .filter-pill')[0].onclick = () => setFilter('std', 'all', document.querySelectorAll('#stdFilter .filter-pill')[0]);
+    document.querySelectorAll('#divFilter .filter-pill')[0].onclick = () => setFilter('div', 'all', document.querySelectorAll('#divFilter .filter-pill')[0]);
+}
+
+function setFilter(type, val, el) {
+    if (type === 'std') {
+        currentStd = val;
+        document.querySelectorAll('#stdFilter .filter-pill').forEach(p => p.classList.remove('active'));
+    } else {
+        currentDiv = val;
+        document.querySelectorAll('#divFilter .filter-pill').forEach(p => p.classList.remove('active'));
+    }
+    el.classList.add('active');
+    renderStudents();
+}
+
+function getFiltered() {
+    const q = document.getElementById('searchInput').value.toLowerCase();
+    return students.filter(s => {
+        const matchStd = currentStd === 'all' || s.standard == currentStd;
+        const matchDiv = currentDiv === 'all' || s.division === currentDiv;
+        const matchQ = !q || s.name.toLowerCase().includes(q) || String(s.roll_number).includes(q);
+        return matchStd && matchDiv && matchQ;
+    });
+}
+
+function renderStudents() {
+    if (viewMode === 'table') renderTable();
+    else renderGrid();
+}
+
+function renderTable() {
+    const filtered = getFiltered();
+    const tbody = document.getElementById('studentsBody');
+    if (!filtered.length) {
+        tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><i class="bi bi-people"></i><h6>No students found</h6></div></td></tr>`;
+        return;
+    }
+    tbody.innerHTML = filtered.map(s => {
+        const avg = getStudentAvg(s.id);
+        const color = avatarColor(s.name);
+        return `
+        <tr>
+            <td>
+                <div style="display:flex;align-items:center;gap:10px">
+                    <div class="avatar" style="background:${color}">${avatarInitials(s.name)}</div>
+                    <div>
+                        <div style="font-weight:500">${s.name}</div>
+                    </div>
+                </div>
+            </td>
+            <td style="color:var(--text-2)">#${s.roll_number}</td>
+            <td><span class="badge-std">${s.standard}</span></td>
+            <td><span class="badge-div ${divClass(s.division)}">${s.division}</span></td>
+            <td style="color:var(--text-2);font-size:12px">${s.dob}</td>
+            <td>
+                ${avg !== null
+                    ? `<div style="display:flex;align-items:center;gap:8px">
+                         <div class="progress" style="width:60px;flex:none"><div class="progress-bar ${marksBarClass(avg)}" style="width:${avg}%"></div></div>
+                         <span class="marks-badge ${marksClass(avg)}">${avg}%</span>
+                       </div>`
+                    : `<span style="color:var(--text-3);font-size:12px">—</span>`}
+            </td>
+            <td>
+                <div style="display:flex;gap:6px">
+                    <a href="/student_marks/${s.id}" class="btn-outline-accent btn-sm" title="Marks"><i class="bi bi-bar-chart"></i></a>
+                    <a href="/edit_student/${s.id}" class="btn btn-secondary btn-sm" title="Edit"><i class="bi bi-pencil"></i></a>
+                    <button class="btn btn-danger btn-sm" onclick="openDeleteModal(${s.id}, '${s.name.replace(/'/g,"\\'")}')"><i class="bi bi-trash"></i></button>
+                </div>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+function renderGrid() {
+    const filtered = getFiltered();
+    const el = document.getElementById('batchGrid');
+    if (!filtered.length) {
+        el.innerHTML = `<div class="empty-state"><i class="bi bi-people"></i><h6>No students found</h6></div>`;
+        return;
+    }
+    el.innerHTML = `<div class="batch-grid">` + filtered.map(s => {
+        const avg = getStudentAvg(s.id);
+        const color = avatarColor(s.name);
+        return `
+        <a href="/student_marks/${s.id}" style="text-decoration:none">
+            <div class="batch-card">
+                <div class="avatar mx-auto mb-2" style="background:${color};width:42px;height:42px;font-size:14px">${avatarInitials(s.name)}</div>
+                <div style="font-weight:600;font-size:13px;color:var(--text)">${s.name}</div>
+                <div style="font-size:11px;color:var(--text-3)">#${s.roll_number} · Std ${s.standard}${s.division}</div>
+                ${avg !== null
+                    ? `<div class="mt-2"><span class="marks-badge ${marksClass(avg)}">${avg}%</span></div>`
+                    : `<div class="mt-2" style="font-size:11px;color:var(--text-3)">No marks</div>`}
+            </div>
+        </a>`;
+    }).join('') + `</div>`;
+}
+
+function openDeleteModal(id, name) {
+    deleteStudentId = id;
+    document.getElementById('deleteStudentName').textContent = name;
+    deleteModal.show();
+}
+
+async function deleteStudent() {
+    try {
+        await api(`/api/students/${deleteStudentId}`, { method: 'DELETE' });
+        deleteModal.hide();
+        showToast('Student deleted successfully');
+        students = students.filter(s => s.id !== deleteStudentId);
+        renderStudents();
+    } catch(e) {
+        showToast(e.message, 'error');
+    }
+}
+
+document.getElementById('searchInput').addEventListener('input', renderStudents);
+
+document.getElementById('toggleView').addEventListener('click', function() {
+    viewMode = viewMode === 'table' ? 'grid' : 'table';
+    this.innerHTML = viewMode === 'table' ? '<i class="bi bi-grid-3x3-gap-fill"></i>' : '<i class="bi bi-list-ul"></i>';
+    document.getElementById('tableView').style.display = viewMode === 'table' ? '' : 'none';
+    document.getElementById('gridView').style.display = viewMode === 'grid' ? '' : 'none';
+    renderStudents();
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+    deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
+    document.getElementById('confirmDeleteBtn').onclick = deleteStudent;
+});
+
+loadStudents();
+</script>
+{% endblock %}

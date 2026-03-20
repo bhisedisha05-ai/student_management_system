@@ -1,0 +1,289 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — EduTrack{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+
+<!-- Stats row -->
+<div class="row g-3 mb-4" id="statsRow">
+    <div class="col-6 col-lg-3">
+        <a href="/students" class="stat-card">
+            <div class="stat-icon blue"><i class="bi bi-people-fill"></i></div>
+            <div>
+                <div class="stat-value" id="statStudents">—</div>
+                <div class="stat-label">Total Students</div>
+            </div>
+        </a>
+    </div>
+    <div class="col-6 col-lg-3">
+        <a href="/subjects" class="stat-card">
+            <div class="stat-icon purple"><i class="bi bi-journal-bookmark-fill"></i></div>
+            <div>
+                <div class="stat-value" id="statSubjects">—</div>
+                <div class="stat-label">Subjects</div>
+            </div>
+        </a>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="stat-card" style="cursor:default">
+            <div class="stat-icon green"><i class="bi bi-bar-chart-fill"></i></div>
+            <div>
+                <div class="stat-value" id="statAvg">—</div>
+                <div class="stat-label">Class Average</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="stat-card" style="cursor:default">
+            <div class="stat-icon orange"><i class="bi bi-award-fill"></i></div>
+            <div>
+                <div class="stat-value" id="statToppers">—</div>
+                <div class="stat-label">Above 80%</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts + Batches row -->
+<div class="row g-3 mb-4">
+    <!-- Marks distribution chart -->
+    <div class="col-lg-7">
+        <div class="card h-100">
+            <div class="card-header d-flex align-items-center justify-content-between">
+                <span>Marks Distribution</span>
+                <select class="form-select form-select-sm" style="width:auto;background:var(--surface);border-color:var(--border);color:var(--text-2);font-size:12px;" id="chartSubjectFilter">
+                    <option value="all">All Subjects</option>
+                </select>
+            </div>
+            <div class="card-body">
+                <div class="chart-container" style="height:220px">
+                    <canvas id="marksChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Standard-wise students -->
+    <div class="col-lg-5">
+        <div class="card h-100">
+            <div class="card-header">Students by Standard</div>
+            <div class="card-body p-0">
+                <div id="standardsList" style="padding:12px 0;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent students -->
+<div class="row g-3">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex align-items-center justify-content-between">
+                <span>Recent Students</span>
+                <a href="/students" class="btn-outline-accent"><i class="bi bi-arrow-right"></i> View All</a>
+            </div>
+            <div class="card-body p-0">
+                <table class="table mb-0">
+                    <thead>
+                        <tr>
+                            <th>Student</th>
+                            <th>Roll No.</th>
+                            <th>Standard</th>
+                            <th>Division</th>
+                            <th>Avg. Marks</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="recentStudents">
+                        <tr><td colspan="6" class="text-center" style="color:var(--text-3); padding:24px">Loading…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allStudents = [], allMarks = [], allSubjects = [], marksChart;
+
+async function loadDashboard() {
+    try {
+        [allStudents, allSubjects] = await Promise.all([
+            api('/api/students?limit=200'),
+            api('/api/subjects')
+        ]);
+
+        // Load marks for all students (first 50 for perf)
+        const marksPromises = allStudents.slice(0, 50).map(s =>
+            api(`/api/marks/${s.id}`).then(m => m.map(x => ({ ...x, student: s }))).catch(() => [])
+        );
+        const marksArrays = await Promise.all(marksPromises);
+        allMarks = marksArrays.flat();
+
+        renderStats();
+        renderSubjectFilter();
+        renderMarksChart('all');
+        renderStandardsList();
+        renderRecentStudents();
+    } catch (e) {
+        showToast('Failed to load dashboard data', 'error');
+    }
+}
+
+function renderStats() {
+    document.getElementById('statStudents').textContent = allStudents.length;
+    document.getElementById('statSubjects').textContent = allSubjects.length;
+
+    if (allMarks.length) {
+        const avg = Math.round(allMarks.reduce((s, m) => s + m.marks, 0) / allMarks.length);
+        document.getElementById('statAvg').textContent = avg + '%';
+
+        const studentAvgs = {};
+        allMarks.forEach(m => {
+            if (!studentAvgs[m.student_id]) studentAvgs[m.student_id] = [];
+            studentAvgs[m.student_id].push(m.marks);
+        });
+        const toppers = Object.values(studentAvgs).filter(arr => {
+            const a = arr.reduce((s,x) => s+x,0) / arr.length;
+            return a >= 80;
+        }).length;
+        document.getElementById('statToppers').textContent = toppers;
+    } else {
+        document.getElementById('statAvg').textContent = 'N/A';
+        document.getElementById('statToppers').textContent = '0';
+    }
+}
+
+function renderSubjectFilter() {
+    const sel = document.getElementById('chartSubjectFilter');
+    allSubjects.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.id;
+        opt.textContent = s.subject_name;
+        sel.appendChild(opt);
+    });
+    sel.addEventListener('change', () => renderMarksChart(sel.value));
+}
+
+function renderMarksChart(subjectFilter) {
+    const filtered = subjectFilter === 'all'
+        ? allMarks
+        : allMarks.filter(m => m.subject_id == subjectFilter);
+
+    const buckets = { '0–39': 0, '40–59': 0, '60–79': 0, '80–100': 0 };
+    filtered.forEach(m => {
+        if (m.marks < 40) buckets['0–39']++;
+        else if (m.marks < 60) buckets['40–59']++;
+        else if (m.marks < 80) buckets['60–79']++;
+        else buckets['80–100']++;
+    });
+
+    if (marksChart) marksChart.destroy();
+
+    const ctx = document.getElementById('marksChart').getContext('2d');
+    marksChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: Object.keys(buckets),
+            datasets: [{
+                label: 'Students',
+                data: Object.values(buckets),
+                backgroundColor: ['rgba(247,95,95,.7)','rgba(247,162,79,.7)','rgba(79,142,247,.7)','rgba(46,216,168,.7)'],
+                borderRadius: 6,
+                borderSkipped: false,
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: {
+                    grid: { color: 'rgba(255,255,255,.04)' },
+                    ticks: { color: '#9399b2', font: { family: 'DM Sans', size: 12 } }
+                },
+                y: {
+                    beginAtZero: true,
+                    grid: { color: 'rgba(255,255,255,.04)' },
+                    ticks: { color: '#9399b2', font: { family: 'DM Sans', size: 12 }, stepSize: 1 }
+                }
+            }
+        }
+    });
+}
+
+function renderStandardsList() {
+    const counts = {};
+    allStudents.forEach(s => { counts[s.standard] = (counts[s.standard] || 0) + 1; });
+    const max = Math.max(...Object.values(counts), 1);
+    const stds = Object.keys(counts).sort((a,b) => +a - +b);
+
+    const el = document.getElementById('standardsList');
+    if (!stds.length) {
+        el.innerHTML = '<div class="empty-state"><i class="bi bi-inbox"></i><h6>No students yet</h6></div>';
+        return;
+    }
+
+    el.innerHTML = stds.map(std => {
+        const pct = Math.round((counts[std] / max) * 100);
+        return `
+        <div style="padding:8px 20px;">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
+                <span style="font-family:'Syne',sans-serif;font-size:12px;font-weight:700;color:var(--text-2);width:60px">Std ${std}</span>
+                <div class="progress flex-1" style="flex:1">
+                    <div class="progress-bar bar-mid" style="width:${pct}%"></div>
+                </div>
+                <span style="font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:var(--text);width:28px;text-align:right">${counts[std]}</span>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function renderRecentStudents() {
+    const tbody = document.getElementById('recentStudents');
+    const recent = allStudents.slice(-8).reverse();
+
+    if (!recent.length) {
+        tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><i class="bi bi-people"></i><h6>No students found</h6><p style="font-size:12px">Add your first student to get started.</p><a href="/add_student" class="btn btn-primary btn-sm mt-2">Add Student</a></div></td></tr>`;
+        return;
+    }
+
+    const subjectMap = {};
+    allSubjects.forEach(s => subjectMap[s.id] = s.subject_name);
+
+    const studentMarkMap = {};
+    allMarks.forEach(m => {
+        if (!studentMarkMap[m.student_id]) studentMarkMap[m.student_id] = [];
+        studentMarkMap[m.student_id].push(m.marks);
+    });
+
+    tbody.innerHTML = recent.map(s => {
+        const marks = studentMarkMap[s.id] || [];
+        const avg = marks.length ? Math.round(marks.reduce((a,b)=>a+b,0)/marks.length) : null;
+        const color = avatarColor(s.name);
+        return `
+        <tr>
+            <td>
+                <div style="display:flex;align-items:center;gap:10px">
+                    <div class="avatar" style="background:${color}">${avatarInitials(s.name)}</div>
+                    <span style="font-weight:500">${s.name}</span>
+                </div>
+            </td>
+            <td style="color:var(--text-2)">#${s.roll_number}</td>
+            <td><span class="badge-std">${s.standard}</span></td>
+            <td><span class="badge-div ${divClass(s.division)}">${s.division}</span></td>
+            <td>
+                ${avg !== null
+                    ? `<span class="marks-badge ${marksClass(avg)}">${avg}%</span>`
+                    : `<span style="color:var(--text-3);font-size:12px">No marks</span>`}
+            </td>
+            <td><a href="/student_marks/${s.id}" class="btn-outline-accent"><i class="bi bi-bar-chart"></i> Marks</a></td>
+        </tr>`;
+    }).join('');
+}
+
+loadDashboard();
+</script>
+{% endblock %}

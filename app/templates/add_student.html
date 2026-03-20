@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Add Student — EduTrack{% endblock %}
+{% block page_title %}Add Student{% endblock %}
+
+{% block content %}
+
+<div style="max-width:600px">
+    <div class="page-header">
+        <div>
+            <div class="section-title">Add New Student</div>
+            <div class="section-sub">Fill in the student's details below</div>
+        </div>
+        <a href="/students" class="btn btn-secondary"><i class="bi bi-arrow-left me-1"></i> Back</a>
+    </div>
+
+    <div class="card">
+        <div class="card-body" style="padding:28px">
+            <div class="row g-3">
+                <div class="col-12">
+                    <label class="form-label">Full Name</label>
+                    <input type="text" class="form-control" id="name" placeholder="e.g. Riya Sharma" required>
+                </div>
+                <div class="col-6">
+                    <label class="form-label">Roll Number</label>
+                    <input type="number" class="form-control" id="rollNumber" placeholder="e.g. 42" min="1" required>
+                </div>
+                <div class="col-6">
+                    <label class="form-label">Date of Birth</label>
+                    <input type="date" class="form-control" id="dob" required>
+                </div>
+                <div class="col-6">
+                    <label class="form-label">Standard</label>
+                    <select class="form-select" id="standard" required>
+                        <option value="" disabled selected>Select standard</option>
+                        {% for i in range(1, 11) %}
+                        <option value="{{ i }}">Standard {{ i }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-6">
+                    <label class="form-label">Division</label>
+                    <select class="form-select" id="division" required>
+                        <option value="" disabled selected>Select division</option>
+                        <option value="A">Division A</option>
+                        <option value="B">Division B</option>
+                        <option value="C">Division C</option>
+                        <option value="D">Division D</option>
+                    </select>
+                </div>
+                <div class="col-12 mt-2">
+                    <hr class="divider">
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-primary" id="submitBtn" onclick="addStudent()">
+                            <i class="bi bi-person-plus-fill me-1"></i> Add Student
+                        </button>
+                        <a href="/students" class="btn btn-secondary">Cancel</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function addStudent() {
+    const name = document.getElementById('name').value.trim();
+    const rollNumber = document.getElementById('rollNumber').value;
+    const dob = document.getElementById('dob').value;
+    const standard = document.getElementById('standard').value;
+    const division = document.getElementById('division').value;
+
+    if (!name || !rollNumber || !dob || !standard || !division) {
+        showToast('Please fill in all fields', 'error');
+        return;
+    }
+
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Adding…';
+
+    try {
+        await api('/api/students', {
+            method: 'POST',
+            body: { name, roll_number: parseInt(rollNumber), dob, standard: parseInt(standard), division }
+        });
+        showToast('Student added successfully!');
+        setTimeout(() => window.location.href = '/students', 1200);
+    } catch(e) {
+        showToast(e.message || 'Error adding student', 'error');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-person-plus-fill me-1"></i> Add Student';
+    }
+}
+</script>
+{% endblock %}
